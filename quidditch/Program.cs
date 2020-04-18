@@ -16,7 +16,6 @@ class Player
 {
 	static void Main(string[] args)
 	{
-		string[]    inputs;
 		Game        game;
 
 		// Readline return my team id, and instanciate game
@@ -27,7 +26,6 @@ class Player
 		{
 			game.SyncGame();
 			game.Update();
-			
 		}
 	}
 }
@@ -35,22 +33,32 @@ class Player
 public abstract class Entity
 {        
 	public int 		Id {get;}
-	public Vector2 	Position {get; set;}
-	public Vector2 	Velocity {get; set;}
-
+	public string	Type {get;}
+	public List<Vector2> Positions{get; set;}		
+	public List<Vector2> Velocities {get; set;}
 	public abstract double	Mass {get;}
 	public abstract double	Friction {get;}
+	public abstract int		Radius {get;}
 
-	public Entity(int id, Vector2 position, Vector2 velocity)
+	public Entity(int id, string type, Vector2 position, Vector2 velocity)
 	{
 		Id = id;
-		Position = position;
-		Velocity = velocity;
+		Type = type;
+		Positions = new List<Vector2>();
+		Positions.Add(position);
+		Velocities = new List<Vector2>();
+		Velocities.Add(velocity);
+	}
+
+	public void Update(Vector2 position, Vector2 velocity)
+	{
+		Positions.Add(position);
+		Velocities.Add(velocity);
 	}
 
 	public override string ToString()
 	{
-		return ($"Entity(id:{Id};Position:{Position};Velocity:{Velocity})");
+		return ($"Entity(id:{Id};Position:{Positions.Last()};Velocity:{Velocities.Last()})");
 	}
 }
 
@@ -59,12 +67,18 @@ public class Wizard : Entity
 	public bool	HasGrabbedSnaffle {get; set;}
 	public override double	Mass{get {return 1.0;}}
 	public override double	Friction {get {return 0.75;}}
+	public override int		Radius {get {return 400;}}
 
-	public Wizard(int id, Vector2 position, Vector2 velocity, bool hasGrabbedSnaffle) : base(id, position, velocity)
+	public Wizard(int id, string type, Vector2 position, Vector2 velocity, bool hasGrabbedSnaffle) : base(id, type, position, velocity)
 	{
 		HasGrabbedSnaffle = hasGrabbedSnaffle;
 	}
 
+	public void Update(Vector2 position, Vector2 velocity, bool hasGrabbedSnaffle)
+	{
+		base.Update(position, velocity);
+		this.HasGrabbedSnaffle = hasGrabbedSnaffle;
+	}	
 	public void Move(Vector2 targetPosition, int thrust)
 	{
 		Console.WriteLine($"MOVE {targetPosition.X} {targetPosition.Y} {thrust}"); 
@@ -80,7 +94,7 @@ public class Wizard : Entity
 
 	public override string ToString()
 	{
-		return ($"Wizard(id:{Id};Position:{Position};Velocity:{Velocity};HasGrabbedSnaffle:{HasGrabbedSnaffle})");
+		return ($"Wizard(id:{Id};Position:{Positions.Last()};Velocity:{Velocities.Last()};HasGrabbedSnaffle:{HasGrabbedSnaffle})");
 	}
 }
 
@@ -89,62 +103,74 @@ public class Snaffle : Entity
 	public bool	HasBeenGrabbed{get; set;}
 	public override double	Mass{get {return 0.5;}}
 	public override double	Friction {get {return 0.75;}}
-	public Snaffle(int id, Vector2 position, Vector2 velocity, bool hasBeenGrabbed) : base(id, position, velocity)
+	public override int		Radius {get {return 150;}}
+	public void Update(Vector2 position, Vector2 velocity, bool hasBeenGrabbed)
+	{
+		base.Update(position, velocity);
+		this.HasBeenGrabbed = hasBeenGrabbed;
+	}	
+	public Snaffle(int id, string type, Vector2 position, Vector2 velocity, bool hasBeenGrabbed) : base(id, type, position, velocity)
 	{
 		HasBeenGrabbed = hasBeenGrabbed;
 	}
 	public override string ToString()
 	{
-		return ($"Snaffle(id:{Id};Position:{Position};Velocity:{Velocity};HasBeenGrabbed:{HasBeenGrabbed})");
+		return ($"Snaffle(id:{Id};Position:{Positions.Last()};Velocity:{Velocities.Last()};HasBeenGrabbed:{HasBeenGrabbed})");
 	}
-
 }
 
 public class Bludger : Entity
 {
 	public int 		IdLastVictim {get; set;}
-
 	public int				Thrust{get{ return 1000;}}
 	public override double	Mass{get {return 8;}}
 	public override double	Friction {get {return 0.9;}}
+	public override int		Radius {get {return 200;}}
 
-	public Bludger(int id, Vector2 position, Vector2 velocity, int idLastVictim) : base(id, position, velocity)
+	public Bludger(int id, string type, Vector2 position, Vector2 velocity, int idLastVictim) : base(id, type, position, velocity)
 	{
 		IdLastVictim = idLastVictim;
 	}
-
+	public void Update(Vector2 position, Vector2 velocity, int idLastVictim)
+	{
+		base.Update(position, velocity);
+		this.IdLastVictim = idLastVictim;
+	}	
 	public override string ToString()
 	{
-		return ($"Bludger(id:{Id};Position:{Position};Velocity:{Velocity};IdLastVictim:{IdLastVictim})");
+		return ($"Bludger(id:{Id};Position:{Positions.Last()};Velocity:{Velocities.Last()};IdLastVictim:{IdLastVictim})");
 	}
 }
 
 public class Team
 {
 	public int 			Id {get;}
-	public Vector2      GoalPosition {get;}
-	public List<Wizard>	Wizards {get; set;}
+	public Vector2      GoalCenterPosition {get;}
 	public int          Score {get; set;}
 	public int          Magic {get; set;}
+	public int          MagicMax {get {return 100;}}
 
-	public Team(int teamId, Vector2 goalPosition)
+	public Team(int teamId, Vector2 goalCenterPosition)
 	{
 		Id = teamId;
-		GoalPosition = goalPosition;
-		Wizards = new List<Wizard>();
+		GoalCenterPosition = goalCenterPosition;
 		Score = -1;
 		Magic = -1;
 	}
-
+	public void Update(int score, int magic)
+	{
+		Score = score;
+		Magic = magic;
+	}	
 }
-
 
 public class Game
 {
 	public Team 			MyTeam {get; set;}
 	public Team 			OpponentTeam {get; set;}
-	public List<Snaffle>	Snaffles {get; set;}
-	public List<Bludger>	Bludgers {get; set;}
+	public List<Entity>		Entities {get; set;}
+
+	public static Vector2	MapSize {get {return new Vector2(16001, 7501);}}
 	
 	// TeamId : 0 if MyGoal is on the left, 1 if MyGoal is on the right
 	public Game(int myTeamId)
@@ -157,8 +183,7 @@ public class Game
 			myTeamId == 0 ? 1 : 0,
 			(myTeamId == 0 ? new Vector2(16000, 3750) : new Vector2(0, 3750))
 		);
-		Snaffles = new List<Snaffle>();
-		Bludgers = new List<Bludger>();
+		Entities = new List<Entity>();
 	}
 
 	public void SyncGame()
@@ -166,12 +191,10 @@ public class Game
 		string[] 	inputs;
 
 		inputs = Console.ReadLine().Split(' ');
-		MyTeam.Score = int.Parse(inputs[0]);
-		MyTeam.Magic = int.Parse(inputs[1]);
+		MyTeam.Update(int.Parse(inputs[0]), int.Parse(inputs[1]));
 
 		inputs = Console.ReadLine().Split(' ');
-		OpponentTeam.Score = int.Parse(inputs[0]); 
-		OpponentTeam.Magic = int.Parse(inputs[1]);
+		OpponentTeam.Update(int.Parse(inputs[0]), int.Parse(inputs[1]));
 
 		int nb_entities = int.Parse(Console.ReadLine()); // number of entities still in game
 		for (int i = 0; i < nb_entities; i++)
@@ -184,23 +207,29 @@ public class Game
 			Vector2 	velocity = new Vector2(int.Parse(inputs[4]),int.Parse(inputs[5]));
 			int 		state = int.Parse(inputs[6]);
 
+			Entity actualElement = this.Entities.Find(e => e.Id == entityId);
+			this.Debug($"{entityId}");
 			switch (entityType)
 			{
 				case "WIZARD":
-					this.MyTeam.Wizards.Add(
-						new Wizard(entityId, position, velocity, Convert.ToBoolean(state)));
+					// if (actualElement is Entity e)
+					// 	e.Id = 9;
+					// else
+					this.Debug($"({position.X},{position.Y})");
+					this.Entities.Add(
+						new Wizard(entityId, entityType, position, velocity, Convert.ToBoolean(state)));
 					break;
 				case "OPPONENT_WIZARD":
-					this.OpponentTeam.Wizards.Add(
-						new Wizard(entityId, position, velocity, Convert.ToBoolean(state)));
+					this.Entities.Add(
+						new Wizard(entityId, entityType, position, velocity, Convert.ToBoolean(state)));
 					break;
 				case "SNAFFLE":
-					this.Snaffles.Add(
-						new Snaffle(entityId, position, velocity, Convert.ToBoolean(state)));
+					this.Entities.Add(
+						new Snaffle(entityId, entityType, position, velocity, Convert.ToBoolean(state)));
 					break;
 				case "BLUDGER":
-					this.Bludgers.Add(
-						new Bludger(entityId, position, velocity, state));
+					this.Entities.Add(
+						new Bludger(entityId, entityType, position, velocity, state));
 					break;
 				default:
 					break;
@@ -211,17 +240,30 @@ public class Game
 	public void Update()
 	{
 		// Edit this line to indicate the action for each wizard (0 ≤ thrust ≤ 150, 0 ≤ power ≤ 500, 0 ≤ magic ≤ 1500)
-		foreach (Wizard w in this.MyTeam.Wizards)
+		foreach (Wizard w in this.Entities.Where(e => e.Type == "WIZZARD"))
 		{	
-			this.Debug(w.ToString());
-			this.Debug($"Id:{w.Id} Vector{w.Position}");
-			w.Move(new Vector2(8000, 3750), 100);
+			Strategy.Attack(this, w);
+
 		}
 	}
 
-	public void Debug(string message)
+	public Static void Debug(string message)
 	{
 		Console.Error.WriteLine(message);
+	}
+}
+
+public class Strategy
+{
+	public static void Attack(Game game, Wizard wizard)
+	{
+		List<Entity> closestEntities = game.Entities.OrderBy(
+			x => Vector2.Distance(wizard.Positions.Last(), x.Positions.Last())).ToList();
+
+		//if (closestEntities.Any())
+			wizard.Move(closestEntities.First().Positions.Last(), 100);
+		//else
+		//	return;
 	}
 }
 
