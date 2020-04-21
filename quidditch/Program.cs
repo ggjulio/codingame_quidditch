@@ -6,11 +6,19 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Numerics;
 
+
+
 /**
  * Grab Snaffles and try to throw them through the opponent's goal!
  * Move towards a Snaffle to grab it and use your team id to determine towards where you need to throw it.
  * Use the Wingardium spell to move things around at your leisure, the more magic you put it, the further they'll move.
  **/
+
+static class Constants
+{
+	public const int wingardiumShootAmount = 15; // 15 last submit
+
+}
 
 class Player
 {
@@ -30,12 +38,43 @@ class Player
 	}
 }
 
+public static class Collision
+{
+	public static bool CircleCircle(int radiusC1, int radiusC2, int distance)
+	{
+		return (distance <= radiusC1 + radiusC2);
+	}
+
+	public static bool LineCircle( Vector2 lineFrom, Vector2 lineTo, Vector2 circle, float radius)
+    {
+        float ab2, acab, h2;
+
+        Vector2 ac = circle - lineFrom;
+        Vector2 ab = lineTo - lineFrom;
+        ab2 = Vector2.Dot(ab,  ab);
+        acab = Vector2.Dot(ac, ab);
+       
+	    float t = acab / ab2;
+        if (t < 0)
+            t = 0;
+        else if (t > 1)
+            t = 1;
+
+        Vector2 h = ((ab * t) + lineFrom) - circle;
+        h2 = Vector2.Dot(h, h);
+
+        return (h2 <= (radius * radius));
+    }
+}
+
 public abstract class Entity
 {        
 	public int 		Id {get;}
 	public string	Type {get;}
 	public List<Vector2> Positions{get; set;}		
+	public Vector2 ActualPosition{get; set;}		
 	public List<Vector2> Velocities {get; set;}
+	public Vector2 ActualVelocity {get; set;}
 	public abstract double	Mass {get;}
 	public abstract double	Friction {get;}
 	public abstract int		Radius {get;}
@@ -46,44 +85,38 @@ public abstract class Entity
 		Type = type;
 		Positions = new List<Vector2>();
 		Positions.Add(position);
+		ActualPosition = position;
 		Velocities = new List<Vector2>();
 		Velocities.Add(velocity);
+		ActualVelocity = velocity;
 	}
-
 	public void Update(Vector2 position, Vector2 velocity)
 	{
 		Positions.Add(position);
+		ActualPosition = position;
 		Velocities.Add(velocity);
+		ActualVelocity = velocity;
 	}
-
 	public float Distance(Entity e)
 	{
-		return(Vector2.Distance(Positions.Last(), e.Positions.Last()));
+		return(Vector2.Distance(ActualPosition, e.ActualPosition));
 	}
 	public float Distance(Vector2 v)
 	{
-		return(Vector2.Distance(Positions.Last(), v));
+		return(Vector2.Distance(ActualPosition, v));
 	}
 	public double AngleBetween(Entity e)
 	{
-		Vector2 v1 = Positions.Last();
-		Vector2 v2 = e.Positions.Last();
+		Vector2 v1 = ActualPosition;
+		Vector2 v2 = e.ActualPosition;
 
 		return (Math.Atan2(v2.Y - v1.Y, v2.X - v1.X) * 180 / Math.PI);
 	}
 
 	public override string ToString()
 	{
-		return ($"Entity(id:{Id};Position:{Positions.Last()};Velocity:{Velocities.Last()})");
+		return ($"Entity(id:{Id};Position:{ActualPosition};Velocity:{Velocities.Last()})");
 	}
-}
-
-public enum eAction
-{
-	None,
-	Attack,
-	Defend,
-	Magic
 }
 
 public class Wizard : Entity
@@ -91,6 +124,7 @@ public class Wizard : Entity
 	public bool	CanShootSnaffle {get; set;}
 	public bool HasGrabbedSnaffle {get; set;}
 	public Snaffle			grabbedSnaffle {get; set;}
+	public List<Snaffle>	NearestSnaffles {get; set;}
 	public Snaffle			TargetSnaffle {get; set;}
 	public override double	Mass{get {return 1.0;}}
 	public override double	Friction {get {return 0.75;}}
@@ -102,6 +136,8 @@ public class Wizard : Entity
 		CanShootSnaffle = canShootSnaffle;
 		HasGrabbedSnaffle = false;
 		Action = eAction.None;
+		NearestSnaffles = null;
+		TargetSnaffle = null;
 	}
 
 	public void Update(Vector2 position, Vector2 velocity, bool canShootSnaffle)
@@ -110,6 +146,8 @@ public class Wizard : Entity
 		CanShootSnaffle = canShootSnaffle;
 		HasGrabbedSnaffle = false;
 		grabbedSnaffle = null;
+		Action = eAction.None;
+		NearestSnaffles = null;
 		TargetSnaffle = null;
 	}	
 	public void Move(Vector2 targetPosition, int thrust)
@@ -127,7 +165,7 @@ public class Wizard : Entity
 
 	public override string ToString()
 	{
-		return ($"Wizard(id:{Id};Position:{Positions.Last()};Velocity:{Velocities.Last()};CanShootSnaffle:{CanShootSnaffle})");
+		return ($"Wizard(id:{Id};Position:{ActualPosition};Velocity:{Velocities.Last()};CanShootSnaffle:{CanShootSnaffle})");
 	}
 }
 
@@ -137,6 +175,7 @@ public class Snaffle : Entity
 	public bool	CanBeShooted {get; set;}
 	public bool HasBeenGrabbed {get; set;}  // the distance between snaffle and wizard is less than 400 unit.
 	public Wizard Grabber {get; set;}
+	public List<Wizard> NearestWizards {get; set;}
 	public override double	Mass{get {return 0.5;}}
 	public override double	Friction {get {return 0.75;}}
 	public override int		Radius {get {return 150;}}
@@ -146,6 +185,7 @@ public class Snaffle : Entity
 		CanBeShooted = canBeShooted;
 		StillExist = true;
 		HasBeenGrabbed = false;
+		NearestWizards = null;
 	}
 	public void Update(Vector2 position, Vector2 velocity, bool canBeShooted)
 	{
@@ -154,16 +194,19 @@ public class Snaffle : Entity
 		StillExist = true;
 		Grabber = null;
 		HasBeenGrabbed = false;
+		NearestWizards = null;
 	}
 	public override string ToString()
 	{
-		return ($"Snaffle(id:{Id};Position:{Positions.Last()};Velocity:{Velocities.Last()};CanBeShooted:{CanBeShooted})");
+		return ($"Snaffle(id:{Id};Position:{ActualPosition};Velocity:{Velocities.Last()};CanBeShooted:{CanBeShooted})");
 	}
 }
 
 public class Bludger : Entity
 {
 	public int 		IdLastVictim {get; set;}
+	
+	public List<Wizard> NearestWizards {get; set;}
 	public int				Thrust{get{ return 1000;}}
 	public override double	Mass{get {return 8;}}
 	public override double	Friction {get {return 0.9;}}
@@ -172,15 +215,18 @@ public class Bludger : Entity
 	public Bludger(int id, string type, Vector2 position, Vector2 velocity, int idLastVictim) : base(id, type, position, velocity)
 	{
 		IdLastVictim = idLastVictim;
+		NearestWizards = null;
 	}
 	public void Update(Vector2 position, Vector2 velocity, int idLastVictim)
 	{
 		base.Update(position, velocity);
-		this.IdLastVictim = idLastVictim;
+		IdLastVictim = idLastVictim;
+		NearestWizards = null;
+
 	}	
 	public override string ToString()
 	{
-		return ($"Bludger(id:{Id};Position:{Positions.Last()};Velocity:{Velocities.Last()};IdLastVictim:{IdLastVictim})");
+		return ($"Bludger(id:{Id};Position:{ActualPosition};Velocity:{Velocities.Last()};IdLastVictim:{IdLastVictim})");
 	}
 }
 
@@ -188,16 +234,21 @@ public class Team
 {
 	public int 			Id {get;}
 	public Vector2      GoalCenterPosition {get;}
+	public Vector2		Pole0 {get;}
+	public Vector2		Pole1 {get;}
+
 	public int          Score {get; set;}
 	public int          Magic {get; set;}
 	public int          MagicMax {get {return 100;}}
 
-	public Team(int teamId, Vector2 goalCenterPosition)
+	public Team(int teamId, Vector2 goalCenterPosition, Vector2 pole0, Vector2 pole1)
 	{
 		Id = teamId;
 		GoalCenterPosition = goalCenterPosition;
 		Score = -1;
 		Magic = -1;
+		Pole0 = pole0;
+		Pole1 = pole1;
 	}
 	public void Update(int score, int magic)
 	{
@@ -218,11 +269,15 @@ public class Game
 	{
 		MyTeam = new Team(
 			myTeamId,
-			(myTeamId == 0 ? new Vector2(0, 3750) : new Vector2(16000, 3750))
+			(myTeamId == 0 ? new Vector2(0, 3750) : new Vector2(16000, 3750)),
+			(myTeamId == 0 ? new Vector2(0, 1750 + 451) : new Vector2(16000, 1750 + 451)),
+			(myTeamId == 0 ? new Vector2(0, 5750 - 451) : new Vector2(16000, 5750 - 451))
 		);
 		OpponentTeam = new Team(
 			myTeamId == 0 ? 1 : 0,
-			(myTeamId == 0 ? new Vector2(16000, 3750) : new Vector2(0, 3750))
+			(myTeamId == 0 ? new Vector2(16000, 3750) : new Vector2(0, 3750)),
+			(myTeamId == 0 ? new Vector2(16000, 1750 + 451) : new Vector2(0, 1750 + 451)),
+			(myTeamId == 0 ? new Vector2(16000, 5750 - 451) : new Vector2(0, 5750 - 451))
 		);
 		Entities = new List<Entity>();
 	}
@@ -286,29 +341,64 @@ public class Game
 					break;
 			}
 		}
+		this.Entities = this.Entities.OrderBy(e => e.Id).ToList();
 		ComputeAdditionalInfos();
 	}
 	private void ComputeAdditionalInfos()
 	{	
+		// Store grabbed snaffles in wizard object
 		foreach (Wizard w in GetAllWizards())
 			foreach (Snaffle s in GetSnaffles().Where(e => !e.HasBeenGrabbed).ToList())
 			{
-				if (Vector2.Distance(w.Positions.Last(),s.Positions.Last()) < 400)
+				if (Vector2.Distance(w.ActualPosition, s.ActualPosition) < 400)
 				{
-					Game.Debug("Id" + s.Id.ToString());
-					Game.Debug(">" + w.Id.ToString());
-
 					w.HasGrabbedSnaffle = true;
 					w.grabbedSnaffle = s;
 					s.Grabber = w;
 					s.HasBeenGrabbed = true;
 					break;
 				}
-				else
-				{
-
-				}
 			}
+		// Foreach wizard, save the list of his nearest snaffles
+		foreach (Wizard w in GetAllWizards())
+			w.NearestSnaffles = GetSnaffles().OrderBy(e => e.Distance(w)).ToList();	
+		// Foreach snaffle, save the list of his nearest wizards
+		foreach (Snaffle s in GetSnaffles())
+			s.NearestWizards = GetAllWizards().OrderBy(e => e.Distance(s)).ToList();
+		// Foreach bludger, save the list of his nearest wizards
+		foreach (Bludger b in GetBludgers())
+			b.NearestWizards = GetAllWizards().OrderBy(e => e.Distance(b)).ToList();
+		// Compute TargetSnaffle based on Distance.
+		// Should be the nearest, but if is the nearest of the two wizard, the one that is the furthest
+	// will get another target
+		SetTargetSnaffle(GetMyWizards());
+		SetTargetSnaffle(GetOpponentWizards());
+	}
+
+	private void SetTargetSnaffle(List<Wizard> wizards)
+	{
+		Wizard w0 = wizards.First();
+		Wizard w1 = wizards.Last();
+		
+		w0.TargetSnaffle = w0.NearestSnaffles.First();
+		w1.TargetSnaffle = w1.NearestSnaffles.First();
+		
+		if (w0.TargetSnaffle.Id == w1.TargetSnaffle.Id)
+		{
+			//If wizard 0 is closer than wizard 1, assign the second nearest to targetSnaffle
+			if (w0.Distance(w1.TargetSnaffle) < w1.Distance(w1.TargetSnaffle))
+			{
+				w1.TargetSnaffle = w1.NearestSnaffles.FirstOrDefault(e => e.Id != w0.TargetSnaffle.Id);
+				if (w1.TargetSnaffle == null)
+					w1.TargetSnaffle = w1.NearestSnaffles.FirstOrDefault();
+			}
+			else
+			{
+				w0.TargetSnaffle = w0.NearestSnaffles.FirstOrDefault(e => e.Id != w1.TargetSnaffle.Id);
+				if (w0.TargetSnaffle == null)
+					w0.TargetSnaffle = w0.NearestSnaffles.FirstOrDefault();
+			}
+		}
 	}
 	private void SetSnaffleStillExistToFalse()
 	{
@@ -317,58 +407,73 @@ public class Game
 	}
 	public List<Snaffle> GetSnaffles()
 	{
-		return (this.Entities.Where(e => e is Snaffle s && s.StillExist).Cast<Snaffle>().ToList());
+		return (this.Entities.Where(e => e is Snaffle s && s.StillExist).Cast<Snaffle>().OrderBy(e => e.Id).ToList());
 	}
 	public List<Wizard> GetAllWizards()
 	{
-		return (GetMyWizards().Concat(GetOpponentWizards()).ToList());
+		return (GetMyWizards().Concat(GetOpponentWizards()).OrderBy(e => e.Id).ToList());
 	}
 	public List<Wizard> GetMyWizards()
 	{
-		return (this.Entities.Where(e => e is Wizard w && w.Type == "WIZARD").Cast<Wizard>().ToList());
+		return (this.Entities.Where(e => e is Wizard w && w.Type == "WIZARD").Cast<Wizard>().OrderBy(e => e.Id).ToList());
 	}
-
 	public List<Wizard> GetOpponentWizards()
 	{
-		return (this.Entities.Where(e => e is Wizard w && w.Type == "OPPONENT_WIZARD").Cast<Wizard>().ToList());
+		return (this.Entities.Where(e => e is Wizard w && w.Type == "OPPONENT_WIZARD").Cast<Wizard>().OrderBy(e => e.Id).ToList());
 	}
-
 	public List<Bludger> GetBludgers()
 	{
-		return (this.Entities.Where(e => e is Bludger).Cast<Bludger>().ToList());
+		return (this.Entities.Where(e => e is Bludger).Cast<Bludger>().OrderBy(e => e.Id).ToList());
+	}
+	public List<Entity> GetEntityBetween(Vector2 pointA, Vector2 pointB)
+	{
+		return this.Entities.FindAll(
+			e => Collision.LineCircle(pointA, pointB, e.ActualPosition + e.ActualVelocity, e.Radius));
+	}
+	public List<Entity> GetCollidableEntityBetween(Vector2 pointA, Vector2 pointB)
+	{
+		return GetEntityBetween(pointA, pointB).FindAll(
+			e => e.Type == "OPPONENT_WIZARD" || e is Bludger);
+	}
+
+	public bool EntityBetween(Vector2 pointA, Vector2 pointB)
+	{
+		return this.Entities.Any(
+			e => Collision.LineCircle(pointA, pointB, e.ActualPosition + e.ActualVelocity, e.Radius));
+	}
+
+	public bool CollidableEntityBetween(Vector2 pointA, Vector2 pointB)
+	{
+		return GetCollidableEntityBetween(pointA, pointB).Any();
 	}
 
 	public void Play()
 	{
-		// Edit this line to indicate the action for each wizard (0 ≤ thrust ≤ 150, 0 ≤ power ≤ 500, 0 ≤ magic ≤ 1500)
-		// foreach (Wizard w in GetMyWizards())
-		// {	
-		// 	// can set logic here
-		// 	w.Action = eAction.Attack;
-		// }
-		GetMyWizards()[1].Action = eAction.Defend;
-		GetMyWizards()[0].Action = eAction.Attack; 
- 
-		if (MyTeam.Magic == MyTeam.MagicMax - 1 ||
-			!GetSnaffles().Any(
-				e => e.Distance(MyTeam.GoalCenterPosition) < 2500 
-				|| e.Distance(OpponentTeam.GoalCenterPosition) < 2500))
-			if (MyTeam.Magic > 15)
-				GetMyWizards()[0].Action = eAction.Magic;
-		foreach (Wizard w in GetMyWizards())
+		//  (0 ≤ thrust ≤ 150, 0 ≤ power ≤ 500, 0 ≤ magic ≤ 1500)
+		this.SetActions();
+		// Do action foreach wizard in my team
+		foreach (Wizard w in GetMyWizards().OrderBy(w => w.Id).ToList())
 		{
 			switch (w.Action)
 			{
+				case eAction.Shoot:
+					Strategy.Shoot(this, w);
+					break;
+				case eAction.ShootWingardium:
+					Strategy.ShootWingardium(this, w);
+					break;
 				case eAction.Attack:
 					Strategy.Attack(this, w);
 					break;
 				case eAction.Defend:
 					Strategy.Defend(this, w);
 					break;
-				case eAction.Magic:
-					Strategy.Magic(this, w);
+				case eAction.Gardian:
+					Strategy.Gardian(this, w);
 					break;
+				case eAction.None:
 				default:
+					Game.Debug($"NO ACTION TAKEN by the Wizard id: {w.Id}");
 					w.Move(new Vector2(0), 0);
 					break;
 			}
@@ -378,24 +483,194 @@ public class Game
 	{
 		Console.Error.WriteLine(message);
 	}
+	private void SetActions()
+	{
+
+		// If a wizard own a snaffle --> shoot
+		foreach (Wizard w in GetMyWizards())
+			if (w.CanShootSnaffle)
+				w.Action = eAction.Shoot;
+
+		//Check if should defend 
+		Wizard opp = GetOpponentWizards()
+			.Where(o => o.Distance(MyTeam.GoalCenterPosition) < Game.MapSize.X / 2 )
+			.OrderBy(o => o.Distance(MyTeam.GoalCenterPosition)).FirstOrDefault();
+		
+		if (opp != null)
+		{
+			var w = GetMyWizards().OrderBy(e => e.Distance(opp)).ToList()
+				.Find(e => e.Action == eAction.None);
+			// Try to get a wizard that can't shoot !
+			if (w != null)
+				w.Action = eAction.Defend;
+			else
+				GetMyWizards().OrderBy(e => e.Distance(opp)).First().Action = eAction.Defend;
+		}
+		
+		// Try wingardium shoot if magic > 40;
+		foreach (Wizard o in GetOpponentWizards())
+		{
+			if (o.CanShootSnaffle  && MyTeam.Magic > 40)
+			{
+				var w = GetMyWizards().Find(e => e.Action == eAction.None);
+				// Try to get a wizard that can't shoot !
+				if (w != null)
+					w.Action = eAction.ShootWingardium;
+				else
+					GetMyWizards().First().Action = eAction.ShootWingardium;
+				break; // Avoid two Wingardium in one turn
+			}
+		}
+
+		// If No action, attack
+		foreach (Wizard w in GetMyWizards())
+			if (w.Action == eAction.None)
+				w.Action = eAction.Attack;
+	}
+}
+
+public enum eAction
+{
+	None,
+	Attack,
+	Defend,
+	Shoot,
+	ShootWingardium,
+	Gardian,
 }
 
 public class Strategy
 {
-	static List<Snaffle> GetSnafflesOrderClosestToDistance(Game game, Vector2 position)
+
+
+	public static Vector2 BestDirectionToShoot(Game game, Snaffle toShoot)
 	{
-		return (
-			game.GetSnaffles().OrderBy(
-				x => x.Distance(position)).ToList()
-			);
+		List<Entity>	eBetween;
+
+		Vector2 v = game.OpponentTeam.GoalCenterPosition;
+		v.Y = toShoot.ActualPosition.Y;
+		if (v.Y < game.OpponentTeam.Pole0.Y)      v.Y = game.OpponentTeam.Pole0.Y;
+		else if (v.Y > game.OpponentTeam.Pole1.Y) v.Y = game.OpponentTeam.Pole1.Y;
+		
+		eBetween = game.GetCollidableEntityBetween(toShoot.ActualPosition + toShoot.ActualVelocity, v);
+//////////////////////////////////////////////////////////			
+// Shoot to goal
+		if ((!eBetween.Any() || !eBetween.Where(e => toShoot.Distance(e) < 6000).Any())
+			&& toShoot.Distance(game.OpponentTeam.GoalCenterPosition) < 7000)
+			return(game.OpponentTeam.GoalCenterPosition);
+		else if (toShoot.Distance(game.OpponentTeam.GoalCenterPosition) < 3000)
+		{
+//////////////////////////////////////////////////////////			
+//Try pass to nearest wizard		
+		List<Wizard> w = game.GetMyWizards()
+			.Where(e => e.Id != toShoot.Grabber.Id && !game.CollidableEntityBetween(toShoot.ActualPosition + toShoot.ActualVelocity, e.ActualPosition + e.ActualVelocity))
+			.OrderBy(e => e.Distance(toShoot)).ToList();
+
+			// if there is wizard AND if less than 4000 distance, and if not too far behind
+		if (w.Any() && toShoot.Distance(w.First().ActualPosition) < 2500
+			&& toShoot.ActualPosition.X - w.First().ActualPosition.X > -700)
+			return(w.First().ActualPosition + w.First().ActualVelocity);
+
+//////////////////////////////////////////////////////////			
+// Try random place between poles's goal
+			Random r = new Random();
+			for (int i = 0; i < 8; i++)
+			{
+				Vector2 rV = game.OpponentTeam.GoalCenterPosition;
+				rV.Y = r.Next((int)game.OpponentTeam.Pole0.Y + 1 , (int)game.OpponentTeam.Pole1.Y);
+				if (!game.CollidableEntityBetween(toShoot.ActualPosition  + toShoot.ActualVelocity, rV))
+					return (rV);
+			}
+		}
+
+// Try to shoot to the next snaffle 
+	//		
+	//////////////////////////////////
+
+// Try try all y possibility,and sort them to the nearest to the goal.	
+	
+
+	List<Vector2> vList = Enumerable.Repeat(new Vector2(game.OpponentTeam.Pole0.X), (int)(Game.MapSize.Y)).ToList();
+
+	vList = vList.Select((e, i) => {e.Y = i; return e;}).ToList();
+
+	vList = vList.Where(e => !game.CollidableEntityBetween(toShoot.ActualPosition, e) )
+			.OrderBy(e => Vector2.Distance(e, game.OpponentTeam.GoalCenterPosition)).ToList();
+
+	if (vList.Any())
+		return (vList.First());
+
+
+
+
+	return (game.OpponentTeam.GoalCenterPosition);
+
+
 	}
-	static List<Snaffle> 	GetSnafflesClosestToDistanceNotGrabed(Game game, Vector2 position)
+
+	public static void Gardian(Game game, Wizard wizard)
 	{
-		return (
-			GetSnafflesOrderClosestToDistance(game, position).Where(
-			e => !e.HasBeenGrabbed).ToList()
-		);
+		Vector2 v = game.MyTeam.GoalCenterPosition;
+		if (v.X == 0)
+			v.X += wizard.Radius;
+		else
+			v.X -= wizard.Radius;
+		wizard.Move(v, 150);
 	}
+
+	public static void Shoot(Game game, Wizard wizard)
+	{
+		if (wizard.CanShootSnaffle)
+			wizard.Shoot(BestDirectionToShoot(game, wizard.grabbedSnaffle), 500);
+		else
+			Game.Debug("Can't SHOOT BROO");
+	}
+
+	public static void ShootWingardium(Game game, Wizard wizard)
+	{
+		Snaffle s = game.GetSnaffles()
+			.OrderBy(e => e.Distance(game.OpponentTeam.GoalCenterPosition)).FirstOrDefault();
+
+		if (s != null)
+			wizard.Wingardium(s, BestDirectionToShoot(game, s), game.MyTeam.Magic);
+		else
+		{
+			Strategy.Attack(game, wizard);
+			Game.Debug("Can't wingardium shoot BROO ! ");
+		}
+	}
+
+
+	public static void Attack(Game game, Wizard wizard)
+	{
+		wizard.Move(wizard.TargetSnaffle.ActualPosition + wizard.TargetSnaffle.ActualVelocity, 150);
+	}
+	public static void Defend(Game game, Wizard wizard)
+	{
+		List<Snaffle> sList = game.GetSnaffles().OrderBy(e => e.Distance(game.MyTeam.GoalCenterPosition)).ToList();
+
+		Wizard otherW = game.GetMyWizards().Find(e => e.Id != wizard.Id);
+
+		if (wizard.grabbedSnaffle != null && wizard.grabbedSnaffle.CanBeShooted)
+			if (wizard.Distance(game.OpponentTeam.GoalCenterPosition) > otherW.Distance(game.OpponentTeam.GoalCenterPosition) && wizard.Distance(otherW) > 1000)
+				wizard.Shoot(otherW.ActualPosition, 500);
+			else
+				wizard.Shoot(game.OpponentTeam.GoalCenterPosition, 500);
+		else
+			wizard.Move(sList.First().ActualPosition, 150);
+	}
+
+
+
+
+
+
+
+
+
+
+
+
 	static List<Snaffle> 	GetSnafflesInAngleRange(List<Snaffle> pSnaffles, Wizard wizard, double min, double max)
 	{
 		return (
@@ -407,84 +682,6 @@ public class Strategy
 		if (angle >= min && angle <= max)
 			return (true);
 		return (false);
-	}
-
-	public static Vector2 InterceptOnCircle(p1,p2,c,r){
-    //p1 is the first line point
-    //p2 is the second line point
-    //c is the circle's center
-    //r is the circle's radius
-
-    var p3 = {x:p1.x - c.x, y:p1.y - c.y} //shifted line points
-    var p4 = {x:p2.x - c.x, y:p2.y - c.y}
-
-    var m = (p4.y - p3.y) / (p4.x - p3.x); //slope of the line
-    var b = p3.y - m * p3.x; //y-intercept of line
-
-    var underRadical = Math.pow((Math.pow(r,2)*(Math.pow(m,2)+1)),2)-Math.pow(b,2)); //the value under the square root sign 
-
-    if (underRadical < 0){
-    //line completely missed
-        return false;
-    } else {
-        var t1 = (-2*m*b+2*Math.sqrt(underRadical))/(2 * Math.pow(m,2) + 2); //one of the intercept x's
-        var t2 = (-2*m*b-2*Math.sqrt(underRadical))/(2 * Math.pow(m,2) + 2); //other intercept's x
-        var i1 = {x:t1,y:m*t1+b} //intercept point 1
-        var i2 = {x:t2,y:m*t2+b} //intercept point 2
-        return [i1,i2];
-    }
-}
-
-	public static void Attack(Game game, Wizard wizard)
-	{
-		Snaffle s = null;
-		List<Snaffle> sList =  GetSnafflesClosestToDistanceNotGrabed(game, wizard.Positions.Last());
-
-		if (sList.Any())
-			if (sList.First().Distance(wizard.Positions.Last()) > 1000)
-				sList = GetSnafflesInAngleRange(sList, wizard, -45, 45);
-		
-		if (!sList.Any())
-			sList =  GetSnafflesClosestToDistanceNotGrabed(game, wizard.Positions.Last());
-		if (sList.Any())
-			s = sList.First();
-		// If we can shoot 
-		if (wizard.grabbedSnaffle != null && wizard.grabbedSnaffle.CanBeShooted)
-		{
-			if (wizard.Distance(game.OpponentTeam.GoalCenterPosition) >= 6000 
-				&& !game.GetOpponentWizards().Any(e => e.Distance(s) < 900))
-				wizard.Shoot(s.Positions.Last(), 500);
-			else
-				wizard.Shoot(game.OpponentTeam.GoalCenterPosition, 500);
-		}
-		else if (s != null)
-			wizard.Move(s.Positions.Last(), 100);
-		else
-			wizard.Move(new Vector2(0), 0);
-
-	}
-	public static void Defend(Game game, Wizard wizard)
-	{
-		List<Snaffle> sList = game.GetSnaffles().OrderBy(e => e.Distance(game.MyTeam.GoalCenterPosition)).ToList();
-
-		Wizard otherW = game.GetMyWizards().Find(e => e.Id != wizard.Id);
-
-		if (wizard.grabbedSnaffle != null && wizard.grabbedSnaffle.CanBeShooted)
-			if (wizard.Distance(game.OpponentTeam.GoalCenterPosition) > otherW.Distance(game.OpponentTeam.GoalCenterPosition) && wizard.Distance(otherW) > 1000)
-				wizard.Shoot(otherW.Positions.Last(), 500);
-			else
-				wizard.Shoot(game.OpponentTeam.GoalCenterPosition, 500);
-		else
-			wizard.Move(sList.First().Positions.Last(), 100);
-	}
-	public static void Magic(Game game, Wizard wizard)
-	{
-		List<Snaffle> sList = game.GetSnaffles()
-		.OrderBy(e => e.Distance(game.OpponentTeam.GoalCenterPosition))
-		.ThenBy(e => e.Distance(game.MyTeam.GoalCenterPosition)).ToList();
-
-		wizard.Wingardium(sList.Find(e =>  e.Grabber == null || !game.GetMyWizards().Any(x  => x.Id == e.Grabber.Id)),
-		 game.OpponentTeam.GoalCenterPosition, game.MyTeam.Magic);
 	}
 }
 
