@@ -16,7 +16,7 @@ using System.Numerics;
 
 static class Constants
 {
-	public const int wingardiumShootAmount = 15; // 15 last submit
+	public const int wingardiumShootAmount = 26; // 15 last submit
 
 }
 
@@ -486,43 +486,38 @@ public class Game
 	private void SetActions()
 	{
 
-		// If a wizard own a snaffle --> shoot
+// If a wizard own a snaffle --> shoot
 		foreach (Wizard w in GetMyWizards())
 			if (w.CanShootSnaffle)
 				w.Action = eAction.Shoot;
 
-		//Check if should defend 
-		Wizard opp = GetOpponentWizards()
-			.Where(o => o.Distance(MyTeam.GoalCenterPosition) < Game.MapSize.X / 2 )
-			.OrderBy(o => o.Distance(MyTeam.GoalCenterPosition)).FirstOrDefault();
+//Check if should defend 
+		// Wizard opp = GetOpponentWizards()
+		// 	.Where(o => o.Distance(MyTeam.GoalCenterPosition) < Game.MapSize.X / 2 )
+		// 	.OrderBy(o => o.Distance(MyTeam.GoalCenterPosition)).FirstOrDefault();
 		
-		if (opp != null)
+		// if (opp != null)
+		// {
+		// 	var w = GetMyWizards().OrderBy(e => e.Distance(opp)).ToList()
+		// 		.Find(e => e.Action == eAction.None);
+		// 	// Try to get a wizard that can't shoot !
+		// 	if (w != null)
+		// 		w.Action = eAction.Defend;
+		// 	else
+		// 		GetMyWizards().OrderBy(e => e.Distance(opp)).First().Action = eAction.Defend;
+		// }
+		
+// Try wingardium shoot if magic > 40;
+		if (MyTeam.Magic >= Constants.wingardiumShootAmount)
 		{
-			var w = GetMyWizards().OrderBy(e => e.Distance(opp)).ToList()
-				.Find(e => e.Action == eAction.None);
+			var w = GetMyWizards().Find(e => e.Action == eAction.None);
 			// Try to get a wizard that can't shoot !
 			if (w != null)
-				w.Action = eAction.Defend;
+				w.Action = eAction.ShootWingardium;
 			else
-				GetMyWizards().OrderBy(e => e.Distance(opp)).First().Action = eAction.Defend;
+			GetMyWizards().First().Action = eAction.ShootWingardium;
 		}
-		
-		// Try wingardium shoot if magic > 40;
-		foreach (Wizard o in GetOpponentWizards())
-		{
-			if (o.CanShootSnaffle  && MyTeam.Magic > 40)
-			{
-				var w = GetMyWizards().Find(e => e.Action == eAction.None);
-				// Try to get a wizard that can't shoot !
-				if (w != null)
-					w.Action = eAction.ShootWingardium;
-				else
-					GetMyWizards().First().Action = eAction.ShootWingardium;
-				break; // Avoid two Wingardium in one turn
-			}
-		}
-
-		// If No action, attack
+// If No action, attack
 		foreach (Wizard w in GetMyWizards())
 			if (w.Action == eAction.None)
 				w.Action = eAction.Attack;
@@ -542,6 +537,19 @@ public enum eAction
 public class Strategy
 {
 
+	public static void Attack(Game game, Wizard wizard)
+	{
+		wizard.Move(wizard.TargetSnaffle.ActualPosition + wizard.TargetSnaffle.ActualVelocity, 150);
+	}
+
+	public static void Shoot(Game game, Wizard wizard)
+	{
+		if (wizard.CanShootSnaffle)
+			wizard.Shoot(BestDirectionToShoot(game, wizard.grabbedSnaffle), 500);
+		else
+			Game.Debug("Can't SHOOT BROO");
+	}
+
 
 	public static Vector2 BestDirectionToShoot(Game game, Snaffle toShoot)
 	{
@@ -553,28 +561,19 @@ public class Strategy
 		else if (v.Y > game.OpponentTeam.Pole1.Y) v.Y = game.OpponentTeam.Pole1.Y;
 		
 		eBetween = game.GetCollidableEntityBetween(toShoot.ActualPosition + toShoot.ActualVelocity, v);
-//////////////////////////////////////////////////////////			
-// Shoot to goal
-		if ((!eBetween.Any() || !eBetween.Where(e => toShoot.Distance(e) < 6000).Any())
-			&& toShoot.Distance(game.OpponentTeam.GoalCenterPosition) < 7000)
+			
+// Shoot to goal  //////////////////////////////////////////////////////////
+		if ((!eBetween.Any() || !eBetween.Where(e => toShoot.Distance(e) < 8000).Any())
+			&& toShoot.Distance(game.OpponentTeam.GoalCenterPosition) < 5000)
 			return(game.OpponentTeam.GoalCenterPosition);
-		else if (toShoot.Distance(game.OpponentTeam.GoalCenterPosition) < 3000)
+		else if (toShoot.Distance(game.OpponentTeam.GoalCenterPosition) < 4500)
 		{
-//////////////////////////////////////////////////////////			
-//Try pass to nearest wizard		
-		List<Wizard> w = game.GetMyWizards()
-			.Where(e => e.Id != toShoot.Grabber.Id && !game.CollidableEntityBetween(toShoot.ActualPosition + toShoot.ActualVelocity, e.ActualPosition + e.ActualVelocity))
-			.OrderBy(e => e.Distance(toShoot)).ToList();
+	
+// Try random place between poles's goal  //////////////////////////////////////////////////////////
+			Game.Debug ("Random Place between pole");
 
-			// if there is wizard AND if less than 4000 distance, and if not too far behind
-		if (w.Any() && toShoot.Distance(w.First().ActualPosition) < 2500
-			&& toShoot.ActualPosition.X - w.First().ActualPosition.X > -700)
-			return(w.First().ActualPosition + w.First().ActualVelocity);
-
-//////////////////////////////////////////////////////////			
-// Try random place between poles's goal
 			Random r = new Random();
-			for (int i = 0; i < 8; i++)
+			for (int i = 0; i < 7; i++)
 			{
 				Vector2 rV = game.OpponentTeam.GoalCenterPosition;
 				rV.Y = r.Next((int)game.OpponentTeam.Pole0.Y + 1 , (int)game.OpponentTeam.Pole1.Y);
@@ -582,6 +581,20 @@ public class Strategy
 					return (rV);
 			}
 		}
+//Try pass to nearest wizard  //////////////////////////////////////////////////////////
+		// Game.Debug("HERRE");
+		// Game.Debug("ddd.>" + toShoot.Id.ToString());
+		// List<Wizard> w = game.GetMyWizards()
+		// 	.Where(e => e.Id != toShoot.Grabber.Id && !game.CollidableEntityBetween(toShoot.ActualPosition + toShoot.ActualVelocity, e.ActualPosition + e.ActualVelocity))
+		// 	.OrderBy(e => e.Distance(toShoot)).ToList();
+		// Game.Debug("HERE");
+
+		// if (w.Any())
+		// 	Game.Debug(" ccc >" + (toShoot.ActualPosition.X - w.First().ActualPosition.X).ToString());
+		// 	// if there is wizard AND if less than 2500 distance, and if not too far behind
+		// if (w.Any() && toShoot.Distance(w.First().ActualPosition) < 5500 &&
+		// 	toShoot.ActualPosition.X - w.First().ActualPosition.X < -300)
+		// 	return(w.First().ActualPosition + w.First().ActualVelocity);
 
 // Try to shoot to the next snaffle 
 	//		
@@ -602,11 +615,62 @@ public class Strategy
 
 
 
-
+	Game.Debug("NO BEST SHOT FOUND : Default, goal.center shoot");
 	return (game.OpponentTeam.GoalCenterPosition);
 
 
 	}
+
+	public static Vector2 BestDirectionWingardium(Game game, Snaffle toShoot)
+	{
+		List<Entity>	eBetween;
+
+		Vector2 v = game.OpponentTeam.GoalCenterPosition;
+		v.Y = toShoot.ActualPosition.Y;
+		if (v.Y < game.OpponentTeam.Pole0.Y)      v.Y = game.OpponentTeam.Pole0.Y;
+		else if (v.Y > game.OpponentTeam.Pole1.Y) v.Y = game.OpponentTeam.Pole1.Y;
+		
+		eBetween = game.GetCollidableEntityBetween(toShoot.ActualPosition + toShoot.ActualVelocity, v);
+			
+// Shoot to goal  //////////////////////////////////////////////////////////
+		if ((!eBetween.Any() || !eBetween.Where(e => toShoot.Distance(e) < 8000).Any())
+			&& toShoot.Distance(game.OpponentTeam.GoalCenterPosition) < 5000)
+			return(game.OpponentTeam.GoalCenterPosition);
+		else if (toShoot.Distance(game.OpponentTeam.GoalCenterPosition) < 4500)
+		{
+	
+// Try random place between poles's goal  //////////////////////////////////////////////////////////
+			Game.Debug ("Random Place between pole");
+
+			Random r = new Random();
+			for (int i = 0; i < 7; i++)
+			{
+				Vector2 rV = game.OpponentTeam.GoalCenterPosition;
+				rV.Y = r.Next((int)game.OpponentTeam.Pole0.Y + 1 , (int)game.OpponentTeam.Pole1.Y);
+				if (!game.CollidableEntityBetween(toShoot.ActualPosition  + toShoot.ActualVelocity, rV))
+					return (rV);
+			}
+		}
+
+// Try try all y possibility,and sort them to the nearest to the goal.	
+	List<Vector2> vList = Enumerable.Repeat(new Vector2(game.OpponentTeam.Pole0.X), (int)(Game.MapSize.Y)).ToList();
+
+	vList = vList.Select((e, i) => {e.Y = i; return e;}).ToList();
+
+	vList = vList.Where(e => !game.CollidableEntityBetween(toShoot.ActualPosition, e) )
+			.OrderBy(e => Vector2.Distance(e, game.OpponentTeam.GoalCenterPosition)).ToList();
+
+	if (vList.Any())
+		return (vList.First());
+
+
+
+	Game.Debug("Wingardium NO BEST SHOT FOUND : Default, goal.center shoot");
+	return (game.OpponentTeam.GoalCenterPosition);
+
+
+	}
+
 
 	public static void Gardian(Game game, Wizard wizard)
 	{
@@ -618,13 +682,6 @@ public class Strategy
 		wizard.Move(v, 150);
 	}
 
-	public static void Shoot(Game game, Wizard wizard)
-	{
-		if (wizard.CanShootSnaffle)
-			wizard.Shoot(BestDirectionToShoot(game, wizard.grabbedSnaffle), 500);
-		else
-			Game.Debug("Can't SHOOT BROO");
-	}
 
 	public static void ShootWingardium(Game game, Wizard wizard)
 	{
@@ -632,7 +689,7 @@ public class Strategy
 			.OrderBy(e => e.Distance(game.OpponentTeam.GoalCenterPosition)).FirstOrDefault();
 
 		if (s != null)
-			wizard.Wingardium(s, BestDirectionToShoot(game, s), game.MyTeam.Magic);
+			wizard.Wingardium(s, BestDirectionWingardium(game, s), game.MyTeam.Magic);
 		else
 		{
 			Strategy.Attack(game, wizard);
@@ -641,10 +698,7 @@ public class Strategy
 	}
 
 
-	public static void Attack(Game game, Wizard wizard)
-	{
-		wizard.Move(wizard.TargetSnaffle.ActualPosition + wizard.TargetSnaffle.ActualVelocity, 150);
-	}
+
 	public static void Defend(Game game, Wizard wizard)
 	{
 		List<Snaffle> sList = game.GetSnaffles().OrderBy(e => e.Distance(game.MyTeam.GoalCenterPosition)).ToList();
