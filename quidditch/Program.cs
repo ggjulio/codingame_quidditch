@@ -16,7 +16,7 @@ using System.Numerics;
 
 static class Constants
 {
-	public const int wingardiumShootAmount = 26; // 15 last submit
+	public const int wingardiumShootAmount = 35; // 15 last submit
 
 }
 
@@ -263,6 +263,8 @@ public class Game
 	public Team 			OpponentTeam {get; set;}
 	public List<Entity>		Entities {get; set;}
 	public static Vector2	MapSize {get {return new Vector2(16001, 7501);}}
+
+	public int		DirToShoot {get;}
 	
 	// TeamId : 0 if MyGoal is on the left, 1 if MyGoal is on the right
 	public Game(int myTeamId)
@@ -280,6 +282,7 @@ public class Game
 			(myTeamId == 0 ? new Vector2(16000, 5750 - 451) : new Vector2(0, 5750 - 451))
 		);
 		Entities = new List<Entity>();
+		DirToShoot = myTeamId == 0 ? 1 : -1;
 	}
 
 	public void SyncGame()
@@ -435,6 +438,12 @@ public class Game
 		return GetEntityBetween(pointA, pointB).FindAll(
 			e => e.Type == "OPPONENT_WIZARD" || e is Bludger);
 	}
+	public int GetNbSnafflesToWin()
+	{
+		if (5 == Entities.Where(e => e is Snaffle).Count())
+			return 3;
+		return 4;	
+	}
 
 	public bool EntityBetween(Vector2 pointA, Vector2 pointB)
 	{
@@ -468,6 +477,9 @@ public class Game
 				case eAction.Defend:
 					Strategy.Defend(this, w);
 					break;
+				case eAction.GetAnotherSnaffle:
+					Strategy.GetAnotherSnaffle(this, w);
+					break;
 				case eAction.Gardian:
 					Strategy.Gardian(this, w);
 					break;
@@ -483,9 +495,22 @@ public class Game
 	{
 		Console.Error.WriteLine(message);
 	}
+
+	private bool ShouldGetAnotherSnaffleBehind()
+	{
+		Wizard w = GetMyWizards().OrderBy(e => e.Distance(MyTeam.GoalCenterPosition)).First();
+		
+
+		// try put offset to anticipate we should get snaffle
+		int nbSnafflesAhead = 
+			GetSnaffles().Where(e => (w.grabbedSnaffle != null && w.grabbedSnaffle.Id == e.Id) || e.ActualPosition.X - 150 > w.ActualPosition.X * DirToShoot).Count();
+		Game.Debug(nbSnafflesAhead.ToString());
+		if (MyTeam.Score + nbSnafflesAhead < GetNbSnafflesToWin())
+			return true;
+		return false;
+	}
 	private void SetActions()
 	{
-
 // If a wizard own a snaffle --> shoot
 		foreach (Wizard w in GetMyWizards())
 			if (w.CanShootSnaffle)
@@ -517,6 +542,14 @@ public class Game
 			else
 			GetMyWizards().First().Action = eAction.ShootWingardium;
 		}
+
+		if (ShouldGetAnotherSnaffleBehind())
+		{
+			var w = GetMyWizards().OrderBy(e => e.Distance(MyTeam.GoalCenterPosition)).First();
+			
+			w.Action = eAction.GetAnotherSnaffle;
+		}
+
 // If No action, attack
 		foreach (Wizard w in GetMyWizards())
 			if (w.Action == eAction.None)
@@ -528,6 +561,7 @@ public enum eAction
 {
 	None,
 	Attack,
+	GetAnotherSnaffle,
 	Defend,
 	Shoot,
 	ShootWingardium,
@@ -536,6 +570,22 @@ public enum eAction
 
 public class Strategy
 {
+	public static void GetAnotherSnaffle(Game game, Wizard wizard)
+	{
+		Snaffle s = wizard.NearestSnaffles.Where(e => e.ActualPosition.X < wizard.ActualPosition.X * game.DirToShoot).FirstOrDefault();
+		Game.Debug("GetAnotherSnaffle !");
+
+		if (s != null && game.MyTeam.Magic > 20)
+			wizard.Wingardium(s, wizard.ActualPosition + wizard.ActualVelocity, game.MyTeam.Magic);
+		else if (s != null)
+			wizard.Move(s.ActualPosition + s.ActualVelocity, 150);
+		else
+		{
+			s = wizard.NearestSnaffles.First();
+			wizard.Move(s.ActualPosition + s.ActualVelocity, 150);
+			Game.Debug("Get Another Snaffle DONT FIND SNAFFLE BEHIND !");
+		}
+	}
 
 	public static void Attack(Game game, Wizard wizard)
 	{
@@ -688,6 +738,7 @@ public class Strategy
 		Snaffle s = game.GetSnaffles()
 			.OrderBy(e => e.Distance(game.OpponentTeam.GoalCenterPosition)).FirstOrDefault();
 
+		int nbMagic = game.MyTeam.Magic / 3;
 		if (s != null)
 			wizard.Wingardium(s, BestDirectionWingardium(game, s), game.MyTeam.Magic);
 		else
@@ -696,8 +747,6 @@ public class Strategy
 			Game.Debug("Can't wingardium shoot BROO ! ");
 		}
 	}
-
-
 
 	public static void Defend(Game game, Wizard wizard)
 	{
